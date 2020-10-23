@@ -3,16 +3,24 @@ import math
 import voluptuous as vol
 
 
+class MakeStringMessageCondition:
+    def __call__(self, x):
+        return {
+            "message": x,
+            "condition": "True"
+        }
+
+
 MESSAGE_CONDITION = vol.Schema(
     vol.Any(
         {
             vol.Optional('condition', default="True"): str,
             vol.Required('message'): str,
         },
-        # vol.All(
-        #     str,
-        #     lambda x: {"condition": "True", "message": message}
-        # )
+        vol.All(
+            str,
+            MakeStringMessageCondition()
+        )
     )
 )
 
@@ -127,13 +135,8 @@ def make_alert(config):
 
         condition_met = eval(config['condition'])
         if not condition_met:
-            log.info(f'Alert {config["name"]} Ended')
-            state.set(
-                alert_entity,
-                "off",
-                count=0,
-                start_ts=0
-            )
+            if alert_start_ts != 0:
+                log.info(f'Alert {config["name"]} Ended')
 
             if alert_count > 0:
                 if config['done_message']:
@@ -145,6 +148,15 @@ def make_alert(config):
                             config["notifier"],
                             message=done_message
                         )  
+
+            state.set(
+                alert_entity,
+                "off",
+                count=0,
+                start_ts=0
+            )
+
+
 
             return
 
