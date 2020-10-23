@@ -23,6 +23,7 @@ CONFIG_SCHEMA = vol.Schema({
     vol.Required('notifier'): str,
     vol.Required('message'): vol.Any(str, [str, MESSAGE_CONDITION]),
     vol.Optional('mute', default="False"): str,
+    vol.Optional('done_message', default=''): str,
 
     vol.Optional('app'): __name__.split('.')[-1],
 })
@@ -153,15 +154,12 @@ def make_alert(config):
 
 
         while condition_met:
-            alert_count = alert_count + 1
             alert_time_seconds = round(time.time() - alert_start_ts)
             alert_time_minutes = round(alert_time_seconds / 60)
             alert_time_human = seconds_human(alert_time_seconds)
 
             if alert_time_seconds < 0:
                 log.error(f'{alert_entity}: alert_time_seconds < 0: {alert_time_seconds}')
-
-            state.set(alert_entity, "on", start_ts=alert_start_ts, count=alert_count)
 
             message_tpl = ''
             if isinstance(config['message'], str):
@@ -180,12 +178,15 @@ def make_alert(config):
             message = eval(f"f'{message_tpl}'")
 
             if message:
+                alert_count = alert_count + 1
                 log.info(f'Sending Message: {message}')
                 service.call(
                     "notify",
                     config["notifier"],
                     message=message
                 )
+
+            state.set(alert_entity, "on", start_ts=alert_start_ts, count=alert_count)
 
             wait = task.wait_until(
                 state_trigger=f'not ({config["condition"]})',
@@ -202,6 +203,17 @@ def make_alert(config):
             count=0,
             start_ts=0
         )
+
+        if alert_count > 0:
+            if config['done_message']:
+                done_message_tpl = config['done_message']
+                done_message = eval(f"f'{done_message_tpl}'")
+                if done_message:
+                    service.call(
+                        "notify",
+                        config["notifier"],
+                        message=done_message
+                    )                
 
 
     registered_triggers.append(alert)

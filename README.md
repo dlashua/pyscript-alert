@@ -74,7 +74,9 @@ These are the configuration keys:
 >
 > A condition that will mute this alert. When `True`, the alert will still be active but not sending notifications. As soon as the mute condition is `False`, a notification will be sent.
 
-
+> **done_message** (optional)
+>
+> A notification message to send once the alert is cleared but only if at least one notification has been sent.
 
 ## Requirements
 
