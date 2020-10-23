@@ -1,0 +1,14 @@
+pyscript:
+  apps:    
+    alert:
+      - name: test_one
+        condition: input_boolean.test_1 == 'on'
+        mute: input_boolean.test_2 == 'on'
+        interval: 5
+        message:
+          - condition: alert_count == 1
+            message: Test One is On. Please Turn it Off.
+          - condition: alert_count > 1
+            message: Test One has been On for {alert_time_human}. Please Turn it off.
+        notifier: my_notify
+
