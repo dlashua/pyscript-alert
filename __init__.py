@@ -118,6 +118,13 @@ def make_alert(config):
     @state_trigger(f'True or {config["condition"]} or {config["mute"]}')
     @time_trigger('startup')
     def alert():
+        try: 
+            alert_count = int(state.get(f'{alert_entity}.count'))
+            alert_start_ts = int(state.get(f'{alert_entity}.start_ts'))
+        except:
+            alert_count = 0
+            alert_start_ts = 0
+
         condition_met = eval(config['condition'])
         if not condition_met:
             log.info(f'Alert {config["name"]} Ended')
@@ -127,6 +134,18 @@ def make_alert(config):
                 count=0,
                 start_ts=0
             )
+
+            if alert_count > 0:
+                if config['done_message']:
+                    done_message_tpl = config['done_message']
+                    done_message = eval(f'f"{done_message_tpl}"')
+                    if done_message:
+                        service.call(
+                            "notify",
+                            config["notifier"],
+                            message=done_message
+                        )  
+
             return
 
         mute_met = eval(config['mute'])
@@ -142,16 +161,8 @@ def make_alert(config):
 
         interval_seconds = config['interval'] * 60
 
-        try: 
-            alert_count = int(state.get(f'{alert_entity}.count'))
-            alert_start_ts = int(state.get(f'{alert_entity}.start_ts'))
-        except:
-            alert_count = 0
-            alert_start_ts = 0
-
         if alert_start_ts == 0:
             alert_start_ts = round(time.time())
-
 
         while condition_met:
             alert_time_seconds = round(time.time() - alert_start_ts)
@@ -174,12 +185,15 @@ def make_alert(config):
                     if message_option_eval:
                         message_tpl = message_option['message']
                         break
-
-            message = eval(f"f'{message_tpl}'")
+            try:                
+                message = eval(f'f"{message_tpl}"')
+            except Exception as e:
+                log.error(f'{alert_entity}: Error in template eval. {message_tpl}')
+                raise e
 
             if message:
                 alert_count = alert_count + 1
-                log.info(f'Sending Message: {message}')
+                log.info(f'Sending Message #{alert_count}: {message}')
                 service.call(
                     "notify",
                     config["notifier"],
@@ -195,26 +209,7 @@ def make_alert(config):
             )
 
             if wait['trigger_type'] == 'state':
-                condition_met = False
-
-        state.set(
-            alert_entity,
-            "off",
-            count=0,
-            start_ts=0
-        )
-
-        if alert_count > 0:
-            if config['done_message']:
-                done_message_tpl = config['done_message']
-                done_message = eval(f"f'{done_message_tpl}'")
-                if done_message:
-                    service.call(
-                        "notify",
-                        config["notifier"],
-                        message=done_message
-                    )                
-
+                condition_met = False              
 
     registered_triggers.append(alert)
 
