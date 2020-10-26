@@ -2,13 +2,8 @@ import time
 import math
 import voluptuous as vol
 
+APP_NAME = __name__.split('.')[-1]
 
-class MakeStringMessageCondition:
-    def __call__(self, x):
-        return {
-            "message": x,
-            "condition": "True"
-        }
 
 
 MESSAGE_CONDITION = vol.Schema(
@@ -17,10 +12,7 @@ MESSAGE_CONDITION = vol.Schema(
             vol.Optional('condition', default="True"): str,
             vol.Required('message'): str,
         },
-        vol.All(
-            str,
-            MakeStringMessageCondition()
-        )
+        # str,
     )
 )
 
@@ -32,8 +24,9 @@ CONFIG_SCHEMA = vol.Schema({
     vol.Required('message'): vol.Any(str, [str, MESSAGE_CONDITION]),
     vol.Optional('mute', default="False"): str,
     vol.Optional('done_message', default=''): str,
+    vol.Optional('delay', default=0): vol.Any(int, float),
 
-    vol.Optional('app'): __name__.split('.')[-1],
+    vol.Optional('app'): APP_NAME,
 })
 
 def seconds_human(seconds):
@@ -41,62 +34,43 @@ def seconds_human(seconds):
     seconds_in_hour = 60 * seconds_in_min
     seconds_in_day = 24 * seconds_in_hour
 
-    ret = []
-    r_seconds = seconds
-    days = math.floor(r_seconds / seconds_in_day)
-    r_seconds = r_seconds - (days * seconds_in_day)
-    
-    hours = math.floor(r_seconds / seconds_in_hour)
-    r_seconds = r_seconds - (hours * seconds_in_hour)
-
-    mins = math.floor(r_seconds / seconds_in_min)
-    r_seconds = r_seconds - (mins * seconds_in_min)
+    days = seconds / seconds_in_day
+    hours = seconds / seconds_in_hour
+    mins = seconds / seconds_in_min
 
     message = ''
-    if days > 0:
+    if days >= 1:
+        days = round(days)
         if days == 1:
             message += '1 day'
         else:
             message += f'{days} days'
 
-        if hours == 0:
-            pass
-        elif hours == 1:
-            message += f' and 1 hour'
-        else:
-            message += f' and {hours} hours'
-
         return message
 
-    if hours > 0:
+    if hours >= 1:
+        hours = round(hours)
         if hours == 1:
             message += '1 hour'
         else:
-            message += f'{days} hours'
-
-        if mins == 0:
-            pass
-        elif mins == 1:
-            message += f' and 1 minute'
-        else:
-            message += f' and {mins} minutes'
+            message += f'{hours} hours'
 
         return message
 
-    if mins > 0:
+    if mins >= 1:
+        mins = round(mins)
         if mins == 1:
             message += '1 minute'
         else:
             message += f'{mins} minutes'
 
-        if r_seconds == 0:
-            pass
-        else:
-            message += f' and {round(r_seconds)} seconds'
-
         return message
 
-    return f"{round(r_seconds)} seconds"
+    seconds = round(seconds)
+    if seconds == 1:
+        return "1 second"
+    
+    return f'{seconds} seconds'
 
 
 registered_triggers = []
@@ -110,13 +84,14 @@ def make_alert(config):
 
     log.info(f'Loading Alert {config["name"]}')
 
-    alert_entity = f'pyscript.alert_{config["name"]}'
+    alert_entity = f'pyscript.{APP_NAME}_{config["name"]}'
     state.persist(
         alert_entity,
         default_value="off",
         default_attributes={
             "count": 0,
-            "start_ts": 0
+            "start_ts": 0,
+            "last_notify_ts": 0,
         }
     )
 
@@ -127,15 +102,17 @@ def make_alert(config):
     @time_trigger('startup')
     def alert():
         try: 
-            alert_count = int(state.get(f'{alert_entity}.count'))
-            alert_start_ts = int(state.get(f'{alert_entity}.start_ts'))
+            alert_count = float(state.get(f'{alert_entity}.count'))
+            alert_start_ts = float(state.get(f'{alert_entity}.start_ts'))
+            alert_last_notify_ts = float(state.get(f'{alert_entity}.last_notify_ts'))
         except:
-            alert_count = 0
-            alert_start_ts = 0
+            alert_count = 0.0
+            alert_start_ts = 0.0
+            alert_last_notify_ts = 0.0
 
         condition_met = eval(config['condition'])
         if not condition_met:
-            if alert_start_ts != 0:
+            if alert_start_ts != 0.0:
                 log.info(f'Alert {config["name"]} Ended')
 
             if alert_count > 0:
@@ -153,19 +130,28 @@ def make_alert(config):
                 alert_entity,
                 "off",
                 count=0,
-                start_ts=0
+                start_ts=0,
+                last_notify_ts=0,
             )
 
 
 
             return
 
+        if alert_start_ts == 0.0:
+            if config['delay'] > 0:
+                task.sleep(delay)
+            alert_start_ts = time.time()
+
         mute_met = eval(config['mute'])
         if mute_met:
             log.info(f'Alert {config["name"]} Muted')
             state.set(
                 alert_entity,
-                "muted"
+                "muted",
+                count=alert_count,
+                start_ts=alert_start_ts,
+                last_notify_ts=alert_last_notify_ts,
             )
             return
         
@@ -173,16 +159,38 @@ def make_alert(config):
 
         interval_seconds = config['interval'] * 60
 
-        if alert_start_ts == 0:
-            alert_start_ts = round(time.time())
+        state.set(
+            alert_entity,
+            "on",
+            start_ts=alert_start_ts,
+            count=alert_count,
+            last_notify_ts=alert_last_notify_ts,
+        )
 
         while condition_met:
-            alert_time_seconds = round(time.time() - alert_start_ts)
+            time_now = time.time()
+            alert_time_seconds = round(time_now - alert_start_ts)
             alert_time_minutes = round(alert_time_seconds / 60)
             alert_time_human = seconds_human(alert_time_seconds)
 
             if alert_time_seconds < 0:
                 log.error(f'{alert_entity}: alert_time_seconds < 0: {alert_time_seconds}')
+
+
+            alert_next_notify_ts = alert_last_notify_ts + interval_seconds
+
+            if time_now <= alert_next_notify_ts:
+                remaining_seconds = round(alert_next_notify_ts - time_now)
+                log.info(f'{alert_entity}: Waiting {remaining_seconds} seconds')
+                wait = task.wait_until(
+                    state_trigger=f'not ({config["condition"]})',
+                    timeout = remaining_seconds,
+                    state_check_now=True
+                )
+
+                if wait['trigger_type'] == 'state':
+                    condition_met = False
+                    return
 
             message_tpl = ''
             if isinstance(config['message'], str):
@@ -203,6 +211,16 @@ def make_alert(config):
                 log.error(f'{alert_entity}: Error in template eval. {message_tpl}')
                 raise e
 
+            alert_last_notify_ts = time.time()
+
+            state.set(
+                alert_entity,
+                "on",
+                start_ts=alert_start_ts,
+                count=alert_count,
+                last_notify_ts=alert_last_notify_ts,
+            )
+
             if message:
                 alert_count = alert_count + 1
                 log.info(f'Sending Message #{alert_count}: {message}')
@@ -210,18 +228,7 @@ def make_alert(config):
                     "notify",
                     config["notifier"],
                     message=message
-                )
-
-            state.set(alert_entity, "on", start_ts=alert_start_ts, count=alert_count)
-
-            wait = task.wait_until(
-                state_trigger=f'not ({config["condition"]})',
-                timeout = interval_seconds,
-                state_check_now=True
-            )
-
-            if wait['trigger_type'] == 'state':
-                condition_met = False              
+                )         
 
     registered_triggers.append(alert)
 
@@ -231,7 +238,7 @@ def clean_alerts():
     
     all_pyscript = state.names(domain='pyscript')
     for entity in all_pyscript:
-        if not entity.startswith('pyscript.alert_'):
+        if not entity.startswith(f'pyscript.{APP_NAME}_'):
             continue
 
         if entity in registered_alerts:
@@ -273,6 +280,6 @@ def load_apps_list(app_name, factory):
 ##########
 @time_trigger('startup')
 def load():
-    load_apps("alert", make_alert)
-    load_apps_list('alert', make_alert)
+    load_apps(APP_NAME, make_alert)
+    load_apps_list(APP_NAME, make_alert)
     clean_alerts()
