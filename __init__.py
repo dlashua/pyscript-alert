@@ -82,9 +82,10 @@ def make_alert(config):
     # log.info(config)
     # return
 
-    log.info(f'Loading Alert {config["name"]}')
-
     alert_entity = f'pyscript.{APP_NAME}_{config["name"]}'
+
+    log.info(f'{alert_entity}: Loading')
+
     state.persist(
         alert_entity,
         default_value="off",
@@ -113,7 +114,7 @@ def make_alert(config):
         condition_met = eval(config['condition'])
         if not condition_met:
             if alert_start_ts > 0:
-                log.info(f'Alert {config["name"]} Ended')
+                log.info(f'{alert_entity}: Ended')
 
             if alert_count > 0:
                 if config['done_message']:
@@ -140,6 +141,7 @@ def make_alert(config):
 
         if alert_start_ts <= 0:
             if config['delay'] > 0:
+                log.info(f'{alert_entity}: Delay {config["delay"]}')
                 state.set(
                     alert_entity,
                     "delay",
@@ -152,7 +154,7 @@ def make_alert(config):
 
         mute_met = eval(config['mute'])
         if mute_met:
-            log.info(f'Alert {config["name"]} Muted')
+            log.info(f'{alert_entity}: Muted')
             state.set(
                 alert_entity,
                 "muted",
@@ -162,7 +164,7 @@ def make_alert(config):
             )
             return
         
-        log.info(f'Alert {config["name"]} Started')
+        log.info(f'{alert_entity}: Started')
 
         interval_seconds = config['interval'] * 60
 
