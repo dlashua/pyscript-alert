@@ -1,10 +1,11 @@
+"""Alert"""
+# pylint: disable=eval-used,bare-except
+
 import time
-import math
-import voluptuous as vol
+# import math
+import voluptuous as vol  # pylint: disable=import-error
 
 APP_NAME = __name__.split('.')[-1]
-
-
 
 MESSAGE_CONDITION = vol.Schema(
     vol.Any(
@@ -28,6 +29,7 @@ CONFIG_SCHEMA = vol.Schema({
 
     vol.Optional('app'): APP_NAME,
 })
+
 
 def seconds_human(seconds):
     seconds_in_min = 60
@@ -69,12 +71,13 @@ def seconds_human(seconds):
     seconds = round(seconds)
     if seconds == 1:
         return "1 second"
-    
+
     return f'{seconds} seconds'
 
 
 registered_triggers = []
 registered_alerts = []
+
 
 def make_alert(config):
     # Verify Config
@@ -102,10 +105,12 @@ def make_alert(config):
     @state_trigger(f'True or {config["condition"]} or {config["mute"]}')
     @time_trigger('startup')
     def alert():
-        try: 
+        try:
             alert_count = float(state.get(f'{alert_entity}.count'))
             alert_start_ts = float(state.get(f'{alert_entity}.start_ts'))
-            alert_last_notify_ts = float(state.get(f'{alert_entity}.last_notify_ts'))
+            alert_last_notify_ts = float(
+                state.get(f'{alert_entity}.last_notify_ts')
+            )
         except:
             alert_count = 0.0
             alert_start_ts = 0.0
@@ -125,7 +130,7 @@ def make_alert(config):
                             "notify",
                             config["notifier"],
                             message=done_message
-                        )  
+                        )
 
             state.set(
                 alert_entity,
@@ -134,8 +139,6 @@ def make_alert(config):
                 start_ts=0,
                 last_notify_ts=0,
             )
-
-
 
             return
 
@@ -163,7 +166,7 @@ def make_alert(config):
                 last_notify_ts=alert_last_notify_ts,
             )
             return
-        
+
         log.info(f'{alert_entity}: Started')
 
         interval_seconds = config['interval'] * 60
@@ -183,10 +186,12 @@ def make_alert(config):
 
             if time_now <= alert_next_notify_ts:
                 remaining_seconds = round(alert_next_notify_ts - time_now)
-                log.info(f'{alert_entity}: Waiting {remaining_seconds} seconds')
+                log.info(
+                    f'{alert_entity}: Waiting {remaining_seconds} seconds'
+                )
                 wait = task.wait_until(
                     state_trigger=f'not ({config["condition"]})',
-                    timeout = remaining_seconds,
+                    timeout=remaining_seconds,
                     state_check_now=True
                 )
 
@@ -196,11 +201,17 @@ def make_alert(config):
 
             time_now = time.time()
             alert_time_seconds = round(time_now - alert_start_ts)
-            alert_time_minutes = round(alert_time_seconds / 60)
-            alert_time_human = seconds_human(alert_time_seconds)
+            alert_time_minutes = (  # pylint: disable=unused-variable
+                round(alert_time_seconds / 60)
+            )
+            alert_time_human = (  # pylint: disable=unused-variable
+                seconds_human(alert_time_seconds)
+            )
 
             if alert_time_seconds < 0:
-                log.error(f'{alert_entity}: alert_time_seconds < 0: {alert_time_seconds}')
+                log.error(
+                    f'{alert_entity}: alert_time_seconds < 0: {alert_time_seconds}'
+                )
 
             message_tpl = ''
             if isinstance(config['message'], str):
@@ -215,10 +226,12 @@ def make_alert(config):
                     if message_option_eval:
                         message_tpl = message_option['message']
                         break
-            try:                
+            try:
                 message = eval(f'f"{message_tpl}"')
             except Exception as e:
-                log.error(f'{alert_entity}: Error in template eval. {message_tpl}')
+                log.error(
+                    f'{alert_entity}: Error in template eval. {message_tpl}'
+                )
                 raise e
 
             alert_last_notify_ts = time.time()
@@ -238,14 +251,14 @@ def make_alert(config):
                     "notify",
                     config["notifier"],
                     message=message
-                )         
+                )
 
     registered_triggers.append(alert)
 
 
 def clean_alerts():
     task.sleep(5)
-    
+
     all_pyscript = state.names(domain='pyscript')
     for entity in all_pyscript:
         if not entity.startswith(f'pyscript.{APP_NAME}_'):
@@ -268,12 +281,13 @@ def clean_alerts():
 def load_apps(app_name, factory):
     if "apps" not in pyscript.config:
         return
-    
+
     if app_name not in pyscript.config['apps']:
         return
 
     for app in pyscript.config['apps'][app_name]:
         factory(app)
+
 
 def load_apps_list(app_name, factory):
     if "apps_list" not in pyscript.config:
@@ -283,7 +297,7 @@ def load_apps_list(app_name, factory):
         if 'app' in app:
             if app['app'] == app_name:
                 factory(app)
-    
+
 
 ##########
 # Startup
