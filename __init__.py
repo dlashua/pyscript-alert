@@ -1,5 +1,5 @@
 """Alert"""
-# pylint: disable=eval-used,bare-except
+# pylint: disable=eval-used,bare-except,missing-function-docstring
 
 import time
 # import math
@@ -228,11 +228,10 @@ def make_alert(config):
                         break
             try:
                 message = eval(f'f"{message_tpl}"')
-            except Exception as e:
-                log.error(
+            except Exception as exc:
+                raise ValueError(
                     f'{alert_entity}: Error in template eval. {message_tpl}'
-                )
-                raise e
+                ) from exc
 
             alert_last_notify_ts = time.time()
 
