@@ -112,7 +112,7 @@ def make_alert(config):
 
         condition_met = eval(config['condition'])
         if not condition_met:
-            if alert_start_ts != 0.0:
+            if alert_start_ts > 0:
                 log.info(f'Alert {config["name"]} Ended')
 
             if alert_count > 0:
@@ -138,9 +138,16 @@ def make_alert(config):
 
             return
 
-        if alert_start_ts == 0.0:
+        if alert_start_ts <= 0:
             if config['delay'] > 0:
-                task.sleep(delay)
+                state.set(
+                    alert_entity,
+                    "delay",
+                    count=0,
+                    start_ts=0,
+                    last_notify_ts=0,
+                )
+                task.sleep(config['delay'])
             alert_start_ts = time.time()
 
         mute_met = eval(config['mute'])
@@ -169,13 +176,6 @@ def make_alert(config):
 
         while condition_met:
             time_now = time.time()
-            alert_time_seconds = round(time_now - alert_start_ts)
-            alert_time_minutes = round(alert_time_seconds / 60)
-            alert_time_human = seconds_human(alert_time_seconds)
-
-            if alert_time_seconds < 0:
-                log.error(f'{alert_entity}: alert_time_seconds < 0: {alert_time_seconds}')
-
 
             alert_next_notify_ts = alert_last_notify_ts + interval_seconds
 
@@ -191,6 +191,14 @@ def make_alert(config):
                 if wait['trigger_type'] == 'state':
                     condition_met = False
                     return
+
+            time_now = time.time()
+            alert_time_seconds = round(time_now - alert_start_ts)
+            alert_time_minutes = round(alert_time_seconds / 60)
+            alert_time_human = seconds_human(alert_time_seconds)
+
+            if alert_time_seconds < 0:
+                log.error(f'{alert_entity}: alert_time_seconds < 0: {alert_time_seconds}')
 
             message_tpl = ''
             if isinstance(config['message'], str):
